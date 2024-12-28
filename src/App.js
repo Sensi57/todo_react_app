@@ -8,9 +8,10 @@ import {
   Group,
   Card,
   ActionIcon,
+  Select,
 } from "@mantine/core";
 import { useState, useRef, useEffect } from "react";
-import { MoonStars, Sun, Trash } from "tabler-icons-react";
+import { MoonStars, Sun, Trash, Edit } from "tabler-icons-react";
 
 import { MantineProvider, ColorSchemeProvider } from "@mantine/core";
 import { useHotkeys, useLocalStorage } from "@mantine/hooks";
@@ -18,12 +19,16 @@ import { useHotkeys, useLocalStorage } from "@mantine/hooks";
 export default function App() {
   const [tasks, setTasks] = useState([]);
   const [opened, setOpened] = useState(false);
+  const [editingTaskIndex, setEditingTaskIndex] = useState(null);
+  const [filterState, setFilterState] = useState(null);
+  const [sortState, setSortState] = useState(null);
 
   const [colorScheme, setColorScheme] = useLocalStorage({
     key: "mantine-color-scheme",
     defaultValue: "light",
     getInitialValueInEffect: true,
   });
+
   const toggleColorScheme = (value) =>
     setColorScheme(value || (colorScheme === "dark" ? "light" : "dark"));
 
@@ -31,33 +36,40 @@ export default function App() {
 
   const taskTitle = useRef("");
   const taskSummary = useRef("");
+  const taskState = useRef("");
+  const taskDeadline = useRef("");
 
-  function createTask() {
-    tasks.push({
+  function createNewTask() {
+    const newTask = {
       title: taskTitle.current.value,
       summary: taskSummary.current.value,
-    });
-    setTasks(tasks);
-    saveTasks(tasks);
+      state: taskState.current.value || "Not done",
+      deadline: taskDeadline.current.value || null,
+    };
+
+    if (editingTaskIndex !== null) {
+      const updatedTasks = [...tasks];
+      updatedTasks[editingTaskIndex] = newTask;
+      setTasks(updatedTasks);
+      saveTasks(updatedTasks);
+      setEditingTaskIndex(null);
+    } else {
+      setTasks([...tasks, newTask]);
+      saveTasks([...tasks, newTask]);
+    }
   }
 
   function deleteTask(index) {
-    var clonedTasks = tasks;
-
+    const clonedTasks = [...tasks];
     clonedTasks.splice(index, 1);
-
     setTasks(clonedTasks);
     saveTasks(clonedTasks);
   }
 
   function loadTasks() {
-    let loadedTasks = localStorage.getItem("tasks");
-
-    let tasks = JSON.parse(loadedTasks);
-
-    if (tasks) {
-      setTasks(tasks);
-    }
+    const loadedTasks = localStorage.getItem("tasks");
+    const parsedTasks = JSON.parse(loadedTasks);
+    if (parsedTasks) setTasks(parsedTasks);
   }
 
   function saveTasks(tasks) {
@@ -67,6 +79,19 @@ export default function App() {
   useEffect(() => {
     loadTasks();
   }, []);
+
+  const filteredTasks = tasks
+    .filter((task) => !filterState || task.state === filterState)
+    .sort((a, b) => {
+      if (sortState) {
+        if (sortState === "Done") return a.state === "Done" ? -1 : 1;
+        if (sortState === "Doing right now") return a.state === "Doing right now" ? -1 : 1;
+        if (sortState === "Not done") return a.state === "Not done" ? -1 : 1;
+        if (sortState === "Deadline")
+          return new Date(a.deadline) - new Date(b.deadline);
+      }
+      return 0;
+    });
 
   return (
     <ColorSchemeProvider
@@ -82,16 +107,14 @@ export default function App() {
           <Modal
             opened={opened}
             size={"md"}
-            title={"New Task"}
+            title={editingTaskIndex !== null ? "Edit Task" : "New Task"}
             withCloseButton={false}
-            onClose={() => {
-              setOpened(false);
-            }}
+            onClose={() => setOpened(false)}
             centered
           >
             <TextInput
-              mt={"md"}
               ref={taskTitle}
+              mt={"md"}
               placeholder={"Task Title"}
               required
               label={"Title"}
@@ -102,21 +125,34 @@ export default function App() {
               placeholder={"Task Summary"}
               label={"Summary"}
             />
+            <Select
+              mt={"md"}
+              label={"State"}
+              ref={taskState}
+              placeholder={"Select state"}
+              data={["Done", "Not done", "Doing right now"]}
+            />
+            <TextInput
+              ref={taskDeadline}
+              mt={"md"}
+              type="date"
+              label={"Deadline"}
+              placeholder={"Select deadline"}
+            />
             <Group mt={"md"} position={"apart"}>
               <Button
-                onClick={() => {
-                  setOpened(false);
-                }}
+                onClick={() => setOpened(false)}
                 variant={"subtle"}
               >
                 Cancel
               </Button>
               <Button
                 onClick={() => {
-                  createTask();
+                  createNewTask();
+                  setOpened(false);
                 }}
               >
-                Create Task
+                {editingTaskIndex !== null ? "Save Changes" : "Create Task"}
               </Button>
             </Group>
           </Modal>
@@ -124,7 +160,7 @@ export default function App() {
             <Group position={"apart"}>
               <Title
                 sx={(theme) => ({
-                  fontFamily: `Greycliff CF, ${theme.fontFamily}`,
+                  fontFamily: `Arial, ${theme.fontFamily}`,
                   fontWeight: 900,
                 })}
               >
@@ -142,32 +178,59 @@ export default function App() {
                 )}
               </ActionIcon>
             </Group>
-            {tasks.length > 0 ? (
-              tasks.map((task, index) => {
-                if (task.title) {
-                  return (
-                    <Card withBorder key={index} mt={"sm"}>
-                      <Group position={"apart"}>
-                        <Text weight={"bold"}>{task.title}</Text>
-                        <ActionIcon
-                          onClick={() => {
-                            deleteTask(index);
-                          }}
-                          color={"red"}
-                          variant={"transparent"}
-                        >
-                          <Trash />
-                        </ActionIcon>
-                      </Group>
-                      <Text color={"dimmed"} size={"md"} mt={"sm"}>
-                        {task.summary
-                          ? task.summary
-                          : "No summary was provided for this task"}
-                      </Text>
-                    </Card>
-                  );
-                }
-              })
+            <Group mt={"md"}>
+              Firstly
+              <Button color="red" onClick={() => setSortState("Deadline")}>Deadline</Button>
+              <Button color="green" sonClick={() => setSortState("Done")}>Done</Button>
+              <Button onClick={() => setSortState("Doing right now")}>Doing</Button>
+              <Button onClick={() => setSortState("Not done")}>Not Done</Button>
+            </Group>
+            <Group mt={"md"}>
+              Show by
+              <Button color="green" onClick={() => setFilterState("Done")}>Done</Button>
+              <Button onClick={() => setFilterState("Not done")}>
+                Not done
+              </Button>
+              <Button onClick={() => setFilterState("Doing right now")}>
+                Doing
+              </Button>
+            </Group>
+            {filteredTasks.length > 0 ? (
+              filteredTasks.map((task, index) => (
+                <Card withBorder key={index} mt={"sm"}>
+                  <Group position={"apart"}>
+                    <Text weight={"bold"}>{task.title}</Text>
+                    <Group>
+                      <ActionIcon
+                        onClick={() => {
+                          setEditingTaskIndex(index);
+                          setOpened(true);
+                        }}
+                        color={"blue"}
+                        variant={"transparent"}
+                      >
+                        <Edit />
+                      </ActionIcon>
+                      <ActionIcon
+                        onClick={() => deleteTask(index)}
+                        color={"red"}
+                        variant={"transparent"}
+                      >
+                        <Trash />
+                      </ActionIcon>
+                    </Group>
+                  </Group>
+                  <Text color={"dimmed"} size={"md"} mt={"sm"}>
+                    {task.summary || "No summary provided"}
+                  </Text>
+                  <Text size={"sm"} mt={"sm"}>
+                    State: {task.state}
+                  </Text>
+                  {task.deadline && (
+                    <Text size={"sm"}>Deadline: {task.deadline}</Text>
+                  )}
+                </Card>
+              ))
             ) : (
               <Text size={"lg"} mt={"md"} color={"dimmed"}>
                 You have no tasks
@@ -175,6 +238,7 @@ export default function App() {
             )}
             <Button
               onClick={() => {
+                setEditingTaskIndex(null);
                 setOpened(true);
               }}
               fullWidth
